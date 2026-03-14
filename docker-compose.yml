@@ -31,6 +31,28 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
 
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:
   rabbitmq_data:
+  grafana_data:

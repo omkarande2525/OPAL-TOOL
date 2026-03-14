@@ -8,7 +8,15 @@ from pydantic import BaseModel
 from autodataset.models.specifications import DatasetSpecification
 from autodataset.repository.module import DatasetRepository, OutputArtifacts, DatasetVersion
 
+import mlflow
+from openlineage.client import OpenLineageClient, set_producer
+from openlineage.client.run import RunEvent, RunState, Run
+from openlineage.client.facet import SchemaDatasetFacet
+
 logger = structlog.get_logger()
+
+# Set OpenLineage producer name
+set_producer("https://github.com/autodataset_platform")
 
 class PipelineStatus(str, Enum):
     QUEUED = "queued"
@@ -42,6 +50,11 @@ class WorkflowOrchestrator:
     def __init__(self, repository: DatasetRepository):
         self.repository = repository
         self.states = {}
+        # MLFlow initialization
+        mlflow.set_tracking_uri("http://localhost:5000") # We will add this to docker compose later
+        mlflow.set_experiment("autodataset_pipelines")
+        # OpenLineage
+        self.ol_client = OpenLineageClient()
         
     def execute_pipeline(self, spec: DatasetSpecification, pipeline_id: str = None, resume_from: str = None) -> PipelineResult:
         pipeline_id = pipeline_id or f"pipe_{uuid.uuid4().hex[:8]}"
@@ -65,30 +78,79 @@ class WorkflowOrchestrator:
             except ValueError:
                 return self._fail_pipeline(pipeline_id, resume_from, f"Invalid stage {resume_from}")
                 
-        try:
-            for stage in stages_order[start_idx:]:
-                self.states[pipeline_id]["current_stage"] = stage
-                logger.info(f"Executing stage {stage}", pipeline_id=pipeline_id)
-                time.sleep(0.01) # mock execution
-                
-                # Mock timeout logic check for Property 32
-                if stage == PipelineStage.CLEANING and getattr(spec, '_mock_timeout', False):
-                    self.states[pipeline_id]["status"] = PipelineStatus.TIMEOUT
-                    return PipelineResult(pipeline_id=pipeline_id, status=PipelineStatus.TIMEOUT, error=PipelineError(stage=stage.value, error_message="Timeout execution exceeded"))
-                    
-                # Mock logic error for Property 29
-                if stage == PipelineStage.TRANSFORMATION and getattr(spec, '_mock_failure', False):
-                    raise Exception("Mocked transformation failure")
-                    
-        except Exception as e:
-            return self._fail_pipeline(pipeline_id, stage.value, str(e))
+        # Start MLflow run
+        with mlflow.start_run(run_name=f"Pipeline_{pipeline_id}") as run:
+            mlflow.log_params({
+                "domain": spec.domain,
+                "task_type": spec.task_type.value,
+                "target_variable": spec.target_variable,
+                "dataset_size": spec.dataset_size
+            })
             
-        self.states[pipeline_id]["status"] = PipelineStatus.COMPLETED
-        return PipelineResult(
-            pipeline_id=pipeline_id,
-            status=PipelineStatus.COMPLETED
-        )
-        
+            try:
+                for stage in stages_order[start_idx:]:
+                    self.states[pipeline_id]["current_stage"] = stage
+                    logger.info(f"Executing stage {stage}", pipeline_id=pipeline_id)
+                    time.sleep(0.01) # mock execution
+                    
+                    # OpenLineage Event Tracking
+                    from datetime import datetime, timezone
+                    now = datetime.now(timezone.utc).isoformat()
+                    run_id = str(uuid.uuid4())
+                    
+                    ol_run = Run(runId=run_id)
+                    
+                    self.ol_client.emit(RunEvent(
+                        eventType=RunState.START,
+                        eventTime=now,
+                        run=ol_run,
+                        job={"namespace": "autodataset", "name": f"stage_{stage.value}"},
+                        inputs=[],
+                        outputs=[],
+                        producer="https://github.com/autodataset_platform"
+                    ))
+                    
+                    # Mock timeout logic check for Property 32
+                    if stage == PipelineStage.CLEANING and getattr(spec, '_mock_timeout', False):
+                        self.states[pipeline_id]["status"] = PipelineStatus.TIMEOUT
+                        self.ol_client.emit(RunEvent(
+                            eventType=RunState.FAIL,
+                            eventTime=datetime.now(timezone.utc).isoformat(),
+                            run=ol_run,
+                            job={"namespace": "autodataset", "name": f"stage_{stage.value}"},
+                            inputs=[],
+                            outputs=[],
+                            producer="https://github.com/autodataset_platform"
+                        ))
+                        return PipelineResult(pipeline_id=pipeline_id, status=PipelineStatus.TIMEOUT, error=PipelineError(stage=stage.value, error_message="Timeout execution exceeded"))
+                        
+                    # Mock logic error for Property 29
+                    if stage == PipelineStage.TRANSFORMATION and getattr(spec, '_mock_failure', False):
+                        raise Exception("Mocked transformation failure")
+                        
+                    self.ol_client.emit(RunEvent(
+                        eventType=RunState.COMPLETE,
+                        eventTime=datetime.now(timezone.utc).isoformat(),
+                        run=ol_run,
+                        job={"namespace": "autodataset", "name": f"stage_{stage.value}"},
+                        inputs=[],
+                        outputs=[],
+                        producer="https://github.com/autodataset_platform"
+                    ))
+                        
+            except Exception as e:
+                mlflow.log_param("pipeline_status", "failed")
+                mlflow.log_param("failed_stage", stage.value)
+                return self._fail_pipeline(pipeline_id, stage.value, str(e))
+                
+            mlflow.log_param("pipeline_status", "completed")
+            # In a real scenario we would log artifact paths to MLflow here
+            self.states[pipeline_id]["status"] = PipelineStatus.COMPLETED
+            return PipelineResult(
+                pipeline_id=pipeline_id,
+                status=PipelineStatus.COMPLETED
+            )
+            
     def _fail_pipeline(self, pipeline_id: str, stage: str, error_msg: str) -> PipelineResult:
         self.states[pipeline_id] = {"status": PipelineStatus.FAILED, "error": error_msg}
         return PipelineResult(
