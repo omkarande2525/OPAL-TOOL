@@ -42,3 +42,16 @@ Pipeline Modules
  ├─ Quality Analysis
  ↓
 Dataset Repository
+
+src/autodataset/
+│
+├── api              → REST API endpoints
+├── orchestrator     → pipeline execution engine
+├── ingestion        → raw data ingestion
+├── cleaner          → data cleaning
+├── transformer      → feature engineering
+├── labeling         → automated labeling
+├── balancer         → class balancing
+├── quality          → dataset validation
+├── repository       → dataset storage
+└── schema_validator → schema validation
