@@ -3,8 +3,12 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 from autodataset.models.specifications import DatasetSpecification
 from autodataset.api.auth import verify_token
+from prometheus_fastapi_instrumentator import Instrumentator
 
 app = FastAPI(title="AutoDataset Platform API")
+
+# Initialize and expose Prometheus metrics endpoint
+Instrumentator().instrument(app).expose(app)
 
 specs_db: Dict[str, DatasetSpecification] = {}
 
@@ -58,3 +62,4 @@ def get_dataset(version_id: str, user: dict = Depends(verify_token)):
 @app.get("/api/v1/health")
 def health_check():
     return {"status": "ok"}
+

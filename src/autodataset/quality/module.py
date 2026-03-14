@@ -80,22 +80,75 @@ class QualityAnalyzer:
     def analyze(self, data: RawData, thresholds: QualityThresholds) -> QualityResult:
         df = pd.DataFrame(data.records) if data.records else pd.DataFrame()
         
-        comp = self.compute_completeness(df)
-        cons = self.compute_consistency(df)
-        acc = self.compute_accuracy(df)
-        val = 1.0 # placeholder for validity metric
+        # Great Expectations Integration
+        import great_expectations as gx
         
+        context = gx.get_context(mode="ephemeral")
+        suite_name = "autodataset_quality_suite"
+        suite = context.suites.add(gx.ExpectationSuite(name=suite_name))
+        
+        expected_completeness = thresholds.min_completeness
+        
+        # Add basic expectations dynamically for every column
+        if not df.empty:
+            for col in df.columns:
+                # Expect minimum completeness (not null) for each column based on the threshold
+                # Note: mostly (0.99) vs purely threshold (e.g. 0.8)
+                suite.add_expectation(
+                    gx.expectations.ExpectColumnValuesToNotBeNull(
+                        column=col,
+                        mostly=expected_completeness
+                    )
+                )
+                
+        # Validate data
+        batch_request = None
+        validation_result = None
+        
+        passes = True
+        comp = 1.0
+        cons = 1.0
+        acc = 1.0
+        val = 1.0
+        failing_metrics = []
+        
+        if not df.empty:
+            # GE 1.x validation via context DataSources
+            datasource = context.data_sources.add_pandas("pandas_datasource")
+            data_asset = datasource.add_dataframe_asset("data")
+            batch_request = data_asset.build_batch_request(dataframe=df)
+            
+            checkpoint = context.checkpoints.add(
+                gx.Checkpoint(
+                    name="quality_checkpoint",
+                    validation_definitions=[
+                        gx.ValidationDefinition(
+                            name="quality_validation",
+                            data=batch_request,
+                            suite=suite
+                        )
+                    ]
+                )
+            )
+            validation_results = checkpoint.run()
+            # Extract basic metric logic from results
+            # For simplicity in output report, map pass/fail
+            if not validation_results.success:
+                passes = False
+                failing_metrics.append("great_expectations_suite_failed")
+                
+            # Keep manual pandas fallback for exact metric reporting
+            comp = self.compute_completeness(df)
+            cons = self.compute_consistency(df)
+            acc = self.compute_accuracy(df)
+
         anomaly_result = self.detector.detect(data)
         anomaly_rate = anomaly_result.total_anomalies / len(df) if len(df) > 0 else 0.0
         
-        failing_metrics = []
-        if comp < thresholds.min_completeness: failing_metrics.append(f"completeness={comp}")
-        if cons < thresholds.min_consistency: failing_metrics.append(f"consistency={cons}")
-        if acc < thresholds.min_accuracy: failing_metrics.append(f"accuracy={acc}")
-        if anomaly_rate > thresholds.max_anomaly_rate: failing_metrics.append(f"anomaly_rate={anomaly_rate}")
-        
-        passes = len(failing_metrics) == 0
-        
+        if anomaly_rate > thresholds.max_anomaly_rate:
+            failing_metrics.append(f"anomaly_rate={anomaly_rate}")
+            passes = False
+            
         report = QualityReport(
             completeness=comp,
             consistency=cons,
@@ -131,3 +184,4 @@ class QualityAnalyzer:
         
     def compute_accuracy(self, df: pd.DataFrame) -> float:
         return 1.0
+
