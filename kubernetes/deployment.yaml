@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autodataset-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: autodataset-api
+  template:
+    metadata:
+      labels:
+        app: autodataset-api
+    spec:
+      containers:
+      - name: api
+        image: autodataset/api:latest
+        ports:
+        - containerPort: 8000
+        volumeMounts:
+        - name: dataset-storage
+          mountPath: /tmp/datasets
+      volumes:
+      - name: dataset-storage
+        persistentVolumeClaim:
+          claimName: autodataset-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: autodataset-api-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: autodataset-api
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000

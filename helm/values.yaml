@@ -1,0 +1,19 @@
+replicaCount: 2
+image:
+  repository: autodataset/api
+  pullPolicy: IfNotPresent
+  tag: "latest"
+service:
+  type: ClusterIP
+  port: 8000
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+persistence:
+  enabled: true
+  size: 100Gi
+  accessMode: ReadWriteMany

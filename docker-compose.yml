@@ -1,0 +1,36 @@
+version: '3.8'
+services:
+  api:
+    build: 
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_URL=postgresql://autodataset:autodataset@postgres:5432/autodataset
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=autodataset
+      - POSTGRES_PASSWORD=autodataset
+      - POSTGRES_DB=autodataset
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+volumes:
+  postgres_data:
+  rabbitmq_data:

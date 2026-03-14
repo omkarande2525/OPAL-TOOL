@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "autodataset"
+version = "0.1.0"
+description = "AutoDataset is a self-hosted automated dataset engineering platform."
+authors = ["AI <ai@example.com>"]
+readme = "README.md"
+packages = [{include = "autodataset", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pydantic = "^2.5.0"
+pandas = "^2.1.0"
+requests = "^2.31.0"
+lxml = "^4.9.3"
+structlog = "^23.2.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+hypothesis = "^6.90.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
