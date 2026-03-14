@@ -10,3 +10,35 @@ AutoDataset is a self-hosted automated dataset engineering platform that constru
 # OPAL-TOOL
 OPAL  is a self-hosted data engineering platform that automatically converts raw data into machine-learning-ready datasets using a modular pipeline architecture.
 
+# OPAL AutoDataset Platform
+
+AutoDataset is a dataset engineering platform that automatically transforms raw data into machine-learning-ready datasets using a modular pipeline architecture.
+
+## Features
+
+- Dataset specification engine
+- Automated data ingestion
+- Schema validation
+- Data cleaning
+- Feature engineering
+- Automated labeling
+- Dataset quality analysis
+- Dataset artifact generation
+- REST API interface
+
+## Architecture
+
+User
+ ↓
+FastAPI API
+ ↓
+Workflow Orchestrator
+ ↓
+Pipeline Modules
+ ├─ Ingestion
+ ├─ Cleaning
+ ├─ Transformation
+ ├─ Labeling
+ ├─ Quality Analysis
+ ↓
+Dataset Repository
