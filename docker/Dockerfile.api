@@ -2,8 +2,16 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
+<<<<<<< HEAD
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
+=======
+RUN pip install poetry
+COPY pyproject.toml poetry.lock* ./
+COPY README.md ./
+RUN poetry config virtualenvs.create false \
+    && poetry install --without dev --no-interaction --no-ansi
+>>>>>>> 8c8d8b0 (temp: docker fix before switching branch)
 
 COPY src/ ./src/
 
