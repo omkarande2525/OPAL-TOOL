@@ -10,7 +10,7 @@ from datetime import datetime
 
 from autodataset.models.specifications import DataSource, SourceType, DataFormat
 from autodataset.models.data import RawData
-from autodataset.models.metadata import DataMetadata
+from autodataset.models.schemas import DataMetadata
 
 logger = structlog.get_logger()
 
@@ -80,17 +80,24 @@ class DataIngestionModule:
 
     def fetch_from_web(self, source: DataSource) -> RawData:
         logger.info("Fetching from web", url=source.location)
-        response = requests.get(source.location, timeout=10)
+        headers = {
+            "User-Agent": "AutoDatasetPipeline/1.0",
+            "Accept": "application/json, text/csv, */*"
+        }
+        response = requests.get(source.location, headers=headers, timeout=30)
         response.raise_for_status()
         return self._parse_response(response.content, source.format, source.source_id)
 
     def fetch_from_api(self, source: DataSource) -> RawData:
         logger.info("Fetching from API", url=source.location)
-        headers = {}
+        headers = {
+            "User-Agent": "AutoDatasetPipeline/1.0",
+            "Accept": "application/json, text/csv, */*"
+        }
         if source.auth_config:
             if source.auth_config.auth_type.lower() == "bearer":
                 headers["Authorization"] = f"Bearer {source.auth_config.credentials.get('token')}"
-        response = requests.get(source.location, headers=headers, timeout=10)
+        response = requests.get(source.location, headers=headers, timeout=30)
         response.raise_for_status()
         return self._parse_response(response.content, source.format, source.source_id)
 
@@ -108,6 +115,12 @@ class DataIngestionModule:
             df = pd.read_parquet(io.BytesIO(content))
         else:
             raise ValueError(f"Unsupported format: {format}")
+            
+        # Guarantee no dict/list survives into later pipeline steps to avoid unhashable type errors
+        for col in df.columns:
+            df[col] = df[col].apply(
+                lambda x: str(x) if isinstance(x, (dict, list)) else x
+            )
         
         records = df.to_dict(orient="records")
         metadata = DataMetadata(

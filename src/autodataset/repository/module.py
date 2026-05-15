@@ -67,8 +67,8 @@ class DatasetRepository:
             version_id=version.version_id,
             spec_id=version.spec_id,
             data_location=version.data_location,
-            metadata_json=version.metadata.model_dump(),
-            lineage_json=version.lineage.model_dump(),
+            metadata_json=version.metadata.model_dump(mode="json"),
+            lineage_json=version.lineage.model_dump(mode="json"),
             created_at=version.created_at
         )
         session.add(db_model)
