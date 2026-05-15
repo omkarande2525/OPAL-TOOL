@@ -3,8 +3,14 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 from autodataset.models.specifications import DatasetSpecification
 from autodataset.api.auth import verify_token
+from prometheus_fastapi_instrumentator import Instrumentator
+import os
+POSTGRES_URL = os.environ.get("POSTGRES_URL", "sqlite:///:memory:")
 
 app = FastAPI(title="AutoDataset Platform API")
+
+# Initialize and expose Prometheus metrics endpoint
+Instrumentator().instrument(app).expose(app)
 
 specs_db: Dict[str, DatasetSpecification] = {}
 
@@ -35,13 +41,35 @@ def delete_specification(spec_id: str, user: dict = Depends(verify_token)):
         raise HTTPException(status_code=404, detail="Specification not found")
     del specs_db[spec_id]
 
+from fastapi import BackgroundTasks
+
+# Create global dependencies for orchestration
+from autodataset.repository.module import DatasetRepository
+from autodataset.orchestrator.module import WorkflowOrchestrator
+
+repository = DatasetRepository(db_url=POSTGRES_URL)
+orchestrator = WorkflowOrchestrator(repository)
+
 @app.post("/api/v1/pipelines/execute")
-def execute_pipeline(spec_id: str, user: dict = Depends(verify_token)):
-    return {"message": "Pipeline execution started", "pipeline_id": "pipe_123"}
+def execute_pipeline(spec_id: str, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
+    if spec_id not in specs_db:
+        raise HTTPException(status_code=404, detail="Specification not found")
+        
+    spec = specs_db[spec_id]
+    import uuid
+    pipeline_id = f"pipe_{uuid.uuid4().hex[:8]}"
+    
+    # Run the execution in the background so the API doesn't block
+    background_tasks.add_task(orchestrator.execute_pipeline, spec, pipeline_id)
+    
+    return {"message": "Pipeline execution started", "pipeline_id": pipeline_id}
 
 @app.get("/api/v1/pipelines/{pipeline_id}/status")
 def get_pipeline_status(pipeline_id: str, user: dict = Depends(verify_token)):
-    return {"pipeline_id": pipeline_id, "status": "running"}
+    status = orchestrator.get_pipeline_status(pipeline_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    return {"pipeline_id": pipeline_id, "status_info": status}
 
 @app.post("/api/v1/pipelines/{pipeline_id}/resume")
 def resume_pipeline(pipeline_id: str, from_stage: str, user: dict = Depends(verify_token)):
@@ -58,3 +86,4 @@ def get_dataset(version_id: str, user: dict = Depends(verify_token)):
 @app.get("/api/v1/health")
 def health_check():
     return {"status": "ok"}
+

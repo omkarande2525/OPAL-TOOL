@@ -11,6 +11,7 @@ services:
     depends_on:
       - postgres
       - rabbitmq
+      - mlflow
 
   postgres:
     image: postgres:15
@@ -31,6 +32,42 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
 
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.11.3
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=sqlite:////mlflow_artifacts/mlflow.db
+      - MLFLOW_ARTIFACT_ROOT=/mlflow_artifacts
+    volumes:
+      - mlflow_data:/mlflow_artifacts
+    depends_on:
+      - postgres
+    command: mlflow server --host 0.0.0.0 --port 5000
+
 volumes:
   postgres_data:
   rabbitmq_data:
+  grafana_data:
+  mlflow_data:

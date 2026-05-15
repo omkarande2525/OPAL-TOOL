@@ -67,8 +67,8 @@ class DatasetRepository:
             version_id=version.version_id,
             spec_id=version.spec_id,
             data_location=version.data_location,
-            metadata_json=version.metadata.model_dump(),
-            lineage_json=version.lineage.model_dump(),
+            metadata_json=version.metadata.model_dump(mode="json"),
+            lineage_json=version.lineage.model_dump(mode="json"),
             created_at=version.created_at
         )
         session.add(db_model)
@@ -156,6 +156,29 @@ class DatasetRepository:
         quality_path = os.path.join(output_dir, "quality_report.json")
         with open(quality_path, "w") as f:
             f.write(version.metadata.quality_metrics.model_dump_json())
+            
+        mermaid_path = os.path.join(output_dir, "pipeline_workflow.md")
+        with open(mermaid_path, "w") as f:
+            f.write("# Dataset Pipeline Lineage\n\n")
+            f.write("```mermaid\ngraph TD;\n")
+            f.write("    Start((Raw Sources)) --> Ingest;\n")
+            
+            # Use metadata processing history if available, else generic
+            history = version.metadata.processing_history or []
+            if not history:
+                f.write("    Ingest --> Clean;\n")
+                f.write("    Clean --> Transform;\n")
+                f.write("    Transform --> QualityAnalysis;\n")
+                f.write("    QualityAnalysis --> ArtifactGeneration;\n")
+            else:
+                prev_node = "Ingest"
+                for i, step in enumerate(history):
+                    node_name = step.stage.replace(" ", "")
+                    # E.g., Clean --> Transform
+                    f.write(f"    {prev_node} --> {node_name}['{step.stage} - {step.description}'];\n")
+                    prev_node = node_name
+                    
+            f.write("```\n")
             
         archive_path = os.path.join(output_dir, "dataset_archive.tar.gz")
         with tarfile.open(archive_path, "w:gz") as tar:
