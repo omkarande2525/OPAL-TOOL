@@ -63,6 +63,7 @@ class DataCleaner:
             )
             
         df = pd.DataFrame(data.records)
+        df = df.applymap(lambda x: str(x) if isinstance(x, (dict, list)) else x)
         original_records = len(df)
         actions = []
         
@@ -70,7 +71,11 @@ class DataCleaner:
         duplicates_removed = 0
         if config.remove_duplicates:
             before_drop = len(df)
-            df = df.drop_duplicates()
+            try:
+                df = df.drop_duplicates()
+            except TypeError:
+                # Handle unhashable types (like nested dicts/lists from JSON endpoints)
+                df = df.loc[df.astype(str).drop_duplicates().index]
             duplicates_removed = before_drop - len(df)
             if duplicates_removed > 0:
                 actions.append(ActionLog(action="remove_duplicates", details=f"Removed {duplicates_removed} duplicates"))

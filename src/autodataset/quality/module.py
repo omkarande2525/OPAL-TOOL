@@ -113,27 +113,23 @@ class QualityAnalyzer:
         failing_metrics = []
         
         if not df.empty:
-            # GE 1.x validation via context DataSources
+            # GE 1.0+ validation via context DataSources
             datasource = context.data_sources.add_pandas("pandas_datasource")
             data_asset = datasource.add_dataframe_asset("data")
-            batch_request = data_asset.build_batch_request(dataframe=df)
             
-            checkpoint = context.checkpoints.add(
-                gx.Checkpoint(
-                    name="quality_checkpoint",
-                    validation_definitions=[
-                        gx.ValidationDefinition(
-                            name="quality_validation",
-                            data=batch_request,
-                            suite=suite
-                        )
-                    ]
+            batch_def = data_asset.add_batch_definition("default_batch")
+            batch_parameters = {"dataframe": df}
+            
+            validation_definition = context.validation_definitions.add(
+                gx.ValidationDefinition(
+                    name="quality_validation",
+                    data=batch_def,
+                    suite=suite,
                 )
             )
-            validation_results = checkpoint.run()
-            # Extract basic metric logic from results
-            # For simplicity in output report, map pass/fail
-            if not validation_results.success:
+            validation_result = validation_definition.run(batch_parameters=batch_parameters)
+            
+            if not validation_result.success:
                 passes = False
                 failing_metrics.append("great_expectations_suite_failed")
                 

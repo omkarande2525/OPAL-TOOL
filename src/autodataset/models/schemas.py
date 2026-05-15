@@ -27,3 +27,10 @@ class SchemaConstraint(BaseModel):
 class Schema(BaseModel):
     fields: List[FieldDefinition]
     constraints: Optional[List[SchemaConstraint]] = []
+
+class DataMetadata(BaseModel):
+    record_count: int
+    column_count: int
+    size_bytes: int
+    source_references: List[str]
+    processing_history: List[str] = []
