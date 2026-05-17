@@ -66,7 +66,7 @@ class DatasetSpecification(BaseModel):
     dataset_size: int = Field(gt=0)
     class_balance_constraints: Optional[Dict[str, float]] = None
     quality_thresholds: QualityThresholds
-    data_sources: List[DataSource] = Field(min_length=1)
+    data_sources: Optional[List[DataSource]] = None
     feature_config: Optional[FeatureConfig] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     created_by: str

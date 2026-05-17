@@ -34,29 +34,54 @@ class DataIngestionModule:
         self.raw_data_dir = raw_data_dir
 
     def ingest(self, sources: List[DataSource]) -> IngestionResult:
-        logger.info("Starting ingestion", source_count=len(sources))
+        logger.info("Starting ingestion with Unified Fetch Strategy", source_count=len(sources))
         start_time = datetime.utcnow()
         raw_data_list = []
         successful_sources = []
         failed_sources = []
         
+        success = False
+        import time
+
         for source in sources:
-            try:
-                if source.source_type == SourceType.WEB:
-                    data = self.fetch_from_web(source)
-                elif source.source_type == SourceType.API:
-                    data = self.fetch_from_api(source)
-                elif source.source_type == SourceType.PUBLIC_DATASET:
-                    data = self.fetch_from_public_dataset(source)
-                else:
-                    raise ValueError(f"Unknown source type: {source.source_type}")
+            logger.info("Attempting to fetch data", source_id=source.source_id)
+            source_success = False
+            last_error = None
+            
+            # Retry mechanism: max 3 retries
+            for attempt in range(1, 4):
+                try:
+                    if source.source_type == SourceType.WEB:
+                        data = self.fetch_from_web(source)
+                    elif source.source_type == SourceType.API:
+                        data = self.fetch_from_api(source)
+                    elif source.source_type == SourceType.PUBLIC_DATASET:
+                        data = self.fetch_from_public_dataset(source)
+                    else:
+                        raise ValueError(f"Unknown source type: {source.source_type}")
+                    
+                    raw_data_list.append(data)
+                    successful_sources.append(source.source_id)
+                    self._preserve_raw_data(data, source.source_id)
+                    
+                    logger.info("[Fetch] Success", source_id=source.source_id, attempt=attempt)
+                    source_success = True
+                    break  # Success, exit retry loop
+                    
+                except Exception as e:
+                    last_error = e
+                    logger.warning("[Fetch] Attempt failed", source_id=source.source_id, attempt=attempt, error=str(e))
+                    time.sleep(1)  # Brief backoff before retry
+                    
+            if source_success:
+                success = True
+                break  # We fetched successfully, ignore remaining fallback sources
+            else:
+                logger.error(f"[Fetch] Failed from {source.source_id}, trying next...")
+                failed_sources.append(SourceError(source_id=source.source_id, error_message=str(last_error)))
                 
-                raw_data_list.append(data)
-                successful_sources.append(source.source_id)
-                self._preserve_raw_data(data, source.source_id)
-            except Exception as e:
-                logger.error("Source ingestion failed", source_id=source.source_id, error=str(e))
-                failed_sources.append(SourceError(source_id=source.source_id, error_message=str(e)))
+        if not success:
+            raise Exception("PipelineExecutionError: All data sources failed")
         
         total_records = sum(len(rd.records) for rd in raw_data_list)
         return IngestionResult(

@@ -26,6 +26,7 @@ class PipelineStatus(str, Enum):
     TIMEOUT = "timeout"
 
 class PipelineStage(str, Enum):
+    SOURCE_RESOLUTION = "source_resolution"
     INGESTION = "ingestion"
     SCHEMA_VALIDATION = "schema_validation"
     CLEANING = "cleaning"
@@ -68,6 +69,7 @@ class WorkflowOrchestrator:
         start_time = time.time()
         
         stages_order = [
+            PipelineStage.SOURCE_RESOLUTION,
             PipelineStage.INGESTION,
             PipelineStage.SCHEMA_VALIDATION,
             PipelineStage.CLEANING,
@@ -116,10 +118,26 @@ class WorkflowOrchestrator:
                         producer="https://github.com/autodataset_platform"
                     ))
                     
-                    if stage == PipelineStage.INGESTION:
+                    if stage == PipelineStage.SOURCE_RESOLUTION:
+                        from autodataset.source_resolver.resolver import SourceResolver
+                        resolver = SourceResolver()
+                        
+                        resolution = resolver.resolve(spec)
+                        
+                        logger.info("[SourceResolver] Primary", source=resolution.primary_source.source_id)
+                        logger.info("[SourceResolver] Fallbacks", sources=[f.source_id for f in resolution.fallback_sources])
+                        
+                        self.states[pipeline_id]["sources_to_ingest"] = [resolution.primary_source] + resolution.fallback_sources
+                    
+                    elif stage == PipelineStage.INGESTION:
                         from autodataset.ingestion.module import DataIngestionModule
                         ingestion_module = DataIngestionModule()
-                        ingestion_result = ingestion_module.ingest(spec.data_sources)
+                        
+                        sources_to_ingest = self.states[pipeline_id].get("sources_to_ingest", spec.data_sources)
+                        if not sources_to_ingest:
+                            raise ValueError("No data sources available for ingestion")
+                            
+                        ingestion_result = ingestion_module.ingest(sources_to_ingest)
                         if not ingestion_result.raw_data:
                              raise Exception(f"Ingestion failed: {ingestion_result.failed_sources}")
                         # For simplicity in this orchestrated pipeline we handle the primary dataset
@@ -186,8 +204,9 @@ class WorkflowOrchestrator:
                             validity=1.0,
                             anomaly_rate=0.0
                         )
+                        actual_sources = self.states[pipeline_id].get("sources_to_ingest", spec.data_sources or [])
                         lineage = DatasetLineage(
-                            source_data_references=[s.source_id for s in spec.data_sources],
+                            source_data_references=[s.source_id for s in actual_sources],
                             reproducibility_hash="hash_xyz"
                         )
                         meta = DatasetMetadata(
